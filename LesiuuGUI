@@ -1,0 +1,446 @@
+-- ✅ Clean Script with Visuals + ESP
+local Players = game:GetService("Players")
+local UserInputService = game:GetService("UserInputService")
+local RunService = game:GetService("RunService")
+
+local player = Players.LocalPlayer
+local playerGui = player:WaitForChild("PlayerGui")
+
+local flying = false
+local noclipEnabled = false
+local infiniteJumpEnabled = false
+local espEnabled = false
+local flySpeed = 16
+local walkMultiplier = 1
+
+local connection
+local noclipConnection
+local espConnection
+
+local originalWalkSpeed = 16
+
+local espDrawings = {}  -- Store ESP elements
+
+-- Main GUI
+local screenGui = Instance.new("ScreenGui")
+screenGui.Name = "FlyHub"
+screenGui.ResetOnSpawn = false
+screenGui.Parent = playerGui
+
+local mainFrame = Instance.new("Frame")
+mainFrame.Size = UDim2.new(0, 440, 0, 400)
+mainFrame.Position = UDim2.new(0.5, -220, 0.3, 0)
+mainFrame.BackgroundColor3 = Color3.fromRGB(35, 20, 55)
+mainFrame.Active = true
+mainFrame.Draggable = true
+mainFrame.Parent = screenGui
+
+Instance.new("UICorner", mainFrame).CornerRadius = UDim.new(0, 12)
+
+-- Left Sidebar
+local leftFrame = Instance.new("Frame")
+leftFrame.Size = UDim2.new(0.4, 0, 1, 0)
+leftFrame.BackgroundColor3 = Color3.fromRGB(28, 18, 48)
+leftFrame.Parent = mainFrame
+Instance.new("UICorner", leftFrame).CornerRadius = UDim.new(0, 12)
+
+local scrolling = Instance.new("ScrollingFrame")
+scrolling.Size = UDim2.new(1, -10, 1, -10)
+scrolling.Position = UDim2.new(0, 5, 0, 5)
+scrolling.BackgroundTransparency = 1
+scrolling.ScrollBarThickness = 5
+scrolling.Parent = leftFrame
+
+local listLayout = Instance.new("UIListLayout")
+listLayout.Padding = UDim.new(0, 6)
+listLayout.SortOrder = Enum.SortOrder.LayoutOrder
+listLayout.Parent = scrolling
+
+-- Right Panel
+local rightFrame = Instance.new("Frame")
+rightFrame.Size = UDim2.new(0.6, 0, 1, 0)
+rightFrame.Position = UDim2.new(0.4, 0, 0, 0)
+rightFrame.BackgroundColor3 = Color3.fromRGB(45, 25, 70)
+rightFrame.Parent = mainFrame
+Instance.new("UICorner", rightFrame).CornerRadius = UDim.new(0, 12)
+
+local title = Instance.new("TextLabel")
+title.Size = UDim2.new(1, 0, 0, 45)
+title.BackgroundTransparency = 1
+title.Text = "Fly"
+title.TextColor3 = Color3.fromRGB(200, 140, 255)
+title.TextSize = 24
+title.Font = Enum.Font.GothamBold
+title.Parent = rightFrame
+
+-- Containers
+local flyContainer = Instance.new("Frame")
+flyContainer.Size = UDim2.new(1, 0, 1, -55)
+flyContainer.Position = UDim2.new(0, 0, 0.18, 0)
+flyContainer.BackgroundTransparency = 1
+flyContainer.Visible = true
+flyContainer.Parent = rightFrame
+
+local movementContainer = Instance.new("Frame")
+movementContainer.Size = UDim2.new(1, 0, 1, -55)
+movementContainer.Position = UDim2.new(0, 0, 0.18, 0)
+movementContainer.BackgroundTransparency = 1
+movementContainer.Visible = false
+movementContainer.Parent = rightFrame
+
+local visualsContainer = Instance.new("Frame")
+visualsContainer.Size = UDim2.new(1, 0, 1, -55)
+visualsContainer.Position = UDim2.new(0, 0, 0.18, 0)
+visualsContainer.BackgroundTransparency = 1
+visualsContainer.Visible = false
+visualsContainer.Parent = rightFrame
+
+-- Fly Tab (same)
+local keyInfo = Instance.new("TextLabel")
+keyInfo.Size = UDim2.new(1, -30, 0, 25)
+keyInfo.Position = UDim2.new(0, 15, 0, 8)
+keyInfo.BackgroundTransparency = 1
+keyInfo.Text = "Toggle Key: F"
+keyInfo.TextColor3 = Color3.fromRGB(180, 130, 230)
+keyInfo.TextSize = 16
+keyInfo.Font = Enum.Font.GothamSemibold
+keyInfo.Parent = flyContainer
+
+local flySpeedLabel = Instance.new("TextLabel")
+flySpeedLabel.Size = UDim2.new(1, -30, 0, 25)
+flySpeedLabel.Position = UDim2.new(0, 15, 0.3, 0)
+flySpeedLabel.BackgroundTransparency = 1
+flySpeedLabel.Text = "Fly Speed: 16"
+flySpeedLabel.TextColor3 = Color3.fromRGB(200, 140, 255)
+flySpeedLabel.TextSize = 17
+flySpeedLabel.Font = Enum.Font.GothamSemibold
+flySpeedLabel.Parent = flyContainer
+
+local flyTrack = Instance.new("Frame")
+flyTrack.Size = UDim2.new(0.88, 0, 0, 10)
+flyTrack.Position = UDim2.new(0.06, 0, 0.5, 0)
+flyTrack.BackgroundColor3 = Color3.fromRGB(65, 35, 95)
+flyTrack.Parent = flyContainer
+Instance.new("UICorner", flyTrack).CornerRadius = UDim.new(1, 0)
+
+local flyKnob = Instance.new("TextButton")
+flyKnob.Size = UDim2.new(0, 24, 0, 24)
+flyKnob.BackgroundColor3 = Color3.fromRGB(200, 140, 255)
+flyKnob.Text = ""
+flyKnob.Parent = flyTrack
+Instance.new("UICorner", flyKnob).CornerRadius = UDim.new(1, 0)
+
+local statusLabel = Instance.new("TextLabel")
+statusLabel.Size = UDim2.new(1, -30, 0, 30)
+statusLabel.Position = UDim2.new(0, 15, 0.78, 0)
+statusLabel.BackgroundTransparency = 1
+statusLabel.Text = "Status: OFF"
+statusLabel.TextColor3 = Color3.fromRGB(255, 90, 90)
+statusLabel.TextSize = 17
+statusLabel.Font = Enum.Font.Gotham
+statusLabel.Parent = flyContainer
+
+-- Movement Tab (Noclip + Walk Speed + Infinite Jump)
+local noclipLabel = Instance.new("TextLabel")
+noclipLabel.Size = UDim2.new(0.6, 0, 0, 30)
+noclipLabel.Position = UDim2.new(0, 15, 0.1, 0)
+noclipLabel.BackgroundTransparency = 1
+noclipLabel.Text = "Noclip"
+noclipLabel.TextColor3 = Color3.fromRGB(220, 220, 220)
+noclipLabel.TextSize = 18
+noclipLabel.Font = Enum.Font.GothamSemibold
+noclipLabel.Parent = movementContainer
+
+local checkbox = Instance.new("TextButton")
+checkbox.Size = UDim2.new(0, 28, 0, 28)
+checkbox.Position = UDim2.new(0.65, 0, 0.09, 0)
+checkbox.BackgroundColor3 = Color3.fromRGB(60, 35, 85)
+checkbox.Text = ""
+checkbox.Parent = movementContainer
+Instance.new("UICorner", checkbox).CornerRadius = UDim.new(0, 6)
+
+local checkmark = Instance.new("TextLabel")
+checkmark.Size = UDim2.new(1,0,1,0)
+checkmark.BackgroundTransparency = 1
+checkmark.Text = "✓"
+checkmark.TextColor3 = Color3.fromRGB(0, 255, 120)
+checkmark.TextSize = 22
+checkmark.Visible = false
+checkmark.Parent = checkbox
+
+local walkLabel = Instance.new("TextLabel")
+walkLabel.Size = UDim2.new(1, -30, 0, 25)
+walkLabel.Position = UDim2.new(0, 15, 0.35, 0)
+walkLabel.BackgroundTransparency = 1
+walkLabel.Text = "Walk Speed: 1x"
+walkLabel.TextColor3 = Color3.fromRGB(200, 140, 255)
+walkLabel.TextSize = 17
+walkLabel.Font = Enum.Font.GothamSemibold
+walkLabel.Parent = movementContainer
+
+local walkTrack = Instance.new("Frame")
+walkTrack.Size = UDim2.new(0.88, 0, 0, 10)
+walkTrack.Position = UDim2.new(0.06, 0, 0.45, 0)
+walkTrack.BackgroundColor3 = Color3.fromRGB(65, 35, 95)
+walkTrack.Parent = movementContainer
+Instance.new("UICorner", walkTrack).CornerRadius = UDim.new(1, 0)
+
+local walkKnob = Instance.new("TextButton")
+walkKnob.Size = UDim2.new(0, 24, 0, 24)
+walkKnob.BackgroundColor3 = Color3.fromRGB(200, 140, 255)
+walkKnob.Text = ""
+walkKnob.Parent = walkTrack
+Instance.new("UICorner", walkKnob).CornerRadius = UDim.new(1, 0)
+
+local infJumpLabel = Instance.new("TextLabel")
+infJumpLabel.Size = UDim2.new(0.6, 0, 0, 30)
+infJumpLabel.Position = UDim2.new(0, 15, 0.6, 0)
+infJumpLabel.BackgroundTransparency = 1
+infJumpLabel.Text = "Infinite Jump"
+infJumpLabel.TextColor3 = Color3.fromRGB(220, 220, 220)
+infJumpLabel.TextSize = 18
+infJumpLabel.Font = Enum.Font.GothamSemibold
+infJumpLabel.Parent = movementContainer
+
+local infJumpCheckbox = Instance.new("TextButton")
+infJumpCheckbox.Size = UDim2.new(0, 28, 0, 28)
+infJumpCheckbox.Position = UDim2.new(0.65, 0, 0.59, 0)
+infJumpCheckbox.BackgroundColor3 = Color3.fromRGB(60, 35, 85)
+infJumpCheckbox.Text = ""
+infJumpCheckbox.Parent = movementContainer
+Instance.new("UICorner", infJumpCheckbox).CornerRadius = UDim.new(0, 6)
+
+local infJumpCheckmark = Instance.new("TextLabel")
+infJumpCheckmark.Size = UDim2.new(1,0,1,0)
+infJumpCheckmark.BackgroundTransparency = 1
+infJumpCheckmark.Text = "✓"
+infJumpCheckmark.TextColor3 = Color3.fromRGB(0, 255, 120)
+infJumpCheckmark.TextSize = 22
+infJumpCheckmark.Visible = false
+infJumpCheckmark.Parent = infJumpCheckbox
+
+-- Visuals Tab - ESP
+local espLabel = Instance.new("TextLabel")
+espLabel.Size = UDim2.new(0.6, 0, 0, 30)
+espLabel.Position = UDim2.new(0, 15, 0.15, 0)
+espLabel.BackgroundTransparency = 1
+espLabel.Text = "Player ESP"
+espLabel.TextColor3 = Color3.fromRGB(220, 220, 220)
+espLabel.TextSize = 18
+espLabel.Font = Enum.Font.GothamSemibold
+espLabel.Parent = visualsContainer
+
+local espCheckbox = Instance.new("TextButton")
+espCheckbox.Size = UDim2.new(0, 28, 0, 28)
+espCheckbox.Position = UDim2.new(0.65, 0, 0.14, 0)
+espCheckbox.BackgroundColor3 = Color3.fromRGB(60, 35, 85)
+espCheckbox.Text = ""
+espCheckbox.Parent = visualsContainer
+Instance.new("UICorner", espCheckbox).CornerRadius = UDim.new(0, 6)
+
+local espCheckmark = Instance.new("TextLabel")
+espCheckmark.Size = UDim2.new(1,0,1,0)
+espCheckmark.BackgroundTransparency = 1
+espCheckmark.Text = "✓"
+espCheckmark.TextColor3 = Color3.fromRGB(0, 255, 120)
+espCheckmark.TextSize = 22
+espCheckmark.Visible = false
+espCheckmark.Parent = espCheckbox
+
+-- ====================== ESP FUNCTION ======================
+local function createESP(plr)
+    if plr == player then return end
+    local box = Drawing.new("Square")
+    box.Thickness = 2
+    box.Color = Color3.fromRGB(255, 0, 255)
+    box.Transparency = 1
+    box.Filled = false
+
+    local nameText = Drawing.new("Text")
+    nameText.Size = 16
+    nameText.Color = Color3.fromRGB(255, 255, 255)
+    nameText.Outline = true
+    nameText.Center = true
+
+    espDrawings[plr] = {box = box, name = nameText}
+end
+
+local function updateESP()
+    for _, plr in pairs(Players:GetPlayers()) do
+        if plr ~= player and plr.Character and plr.Character:FindFirstChild("HumanoidRootPart") and plr.Character:FindFirstChild("Head") then
+            local root = plr.Character.HumanoidRootPart
+            local head = plr.Character.Head
+            local humanoid = plr.Character:FindFirstChild("Humanoid")
+
+            local screenPos, onScreen = workspace.CurrentCamera:WorldToViewportPoint(root.Position)
+            if onScreen then
+                if not espDrawings[plr] then
+                    createESP(plr)
+                end
+
+                local top = workspace.CurrentCamera:WorldToViewportPoint(head.Position + Vector3.new(0, 2, 0))
+                local bottom = workspace.CurrentCamera:WorldToViewportPoint(root.Position - Vector3.new(0, 3, 0))
+
+                local height = bottom.Y - top.Y
+                local width = height / 2
+
+                local drawings = espDrawings[plr]
+                drawings.box.Size = Vector2.new(width, height)
+                drawings.box.Position = Vector2.new(top.X - width/2, top.Y)
+
+                drawings.name.Text = plr.Name .. " [" .. math.floor(humanoid.Health) .. "/" .. math.floor(humanoid.MaxHealth) .. "]"
+                drawings.name.Position = Vector2.new(top.X, top.Y - 20)
+            else
+                if espDrawings[plr] then
+                    espDrawings[plr].box.Visible = false
+                    espDrawings[plr].name.Visible = false
+                end
+            end
+        end
+    end
+end
+
+espCheckbox.MouseButton1Click:Connect(function()
+    espEnabled = not espEnabled
+    espCheckmark.Visible = espEnabled
+
+    if espEnabled then
+        espConnection = RunService.RenderStepped:Connect(updateESP)
+    else
+        if espConnection then espConnection:Disconnect() end
+        for _, drawings in pairs(espDrawings) do
+            drawings.box:Remove()
+            drawings.name:Remove()
+        end
+        espDrawings = {}
+    end
+end)
+
+-- Tab Switching
+local tabs = {
+    {name = "Fly", active = true},
+    {name = "Movement", active = false},
+    {name = "Visuals", active = false},
+}
+
+for _, tab in ipairs(tabs) do
+    local btn = Instance.new("TextButton")
+    btn.Size = UDim2.new(1, -12, 0, 42)
+    btn.BackgroundColor3 = tab.active and Color3.fromRGB(80, 40, 120) or Color3.fromRGB(50, 30, 80)
+    btn.Text = "   " .. tab.name
+    btn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    btn.TextSize = 17
+    btn.Font = Enum.Font.GothamSemibold
+    btn.TextXAlignment = Enum.TextXAlignment.Left
+    btn.Parent = scrolling
+
+    Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 8)
+
+    btn.MouseButton1Click:Connect(function()
+        title.Text = tab.name
+        flyContainer.Visible = (tab.name == "Fly")
+        movementContainer.Visible = (tab.name == "Movement")
+        visualsContainer.Visible = (tab.name == "Visuals")
+    end)
+end
+
+scrolling.CanvasSize = UDim2.new(0, 0, 0, listLayout.AbsoluteContentSize.Y + 20)
+
+-- Sliders and Fly Logic (same as previous stable version)
+local flySpeeds = {16, 32, 64, 128, 512}
+local multipliers = {1, 2, 4, 8, 32}
+local draggingFly = false
+local draggingWalk = false
+
+flyKnob.MouseButton1Down:Connect(function() draggingFly = true end)
+walkKnob.MouseButton1Down:Connect(function() draggingWalk = true end)
+
+UserInputService.InputEnded:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 then
+        draggingFly = false
+        draggingWalk = false
+    end
+end)
+
+RunService.RenderStepped:Connect(function()
+    local mouseX = UserInputService:GetMouseLocation().X
+
+    if draggingFly then
+        local percent = math.clamp((mouseX - flyTrack.AbsolutePosition.X) / flyTrack.AbsoluteSize.X, 0, 1)
+        local index = math.round(percent * (#flySpeeds-1)) + 1
+        flySpeed = flySpeeds[index]
+        flySpeedLabel.Text = "Fly Speed: " .. flySpeed
+        flyKnob.Position = UDim2.new((index-1)/(#flySpeeds-1), -12, 0.5, -12)
+    end
+
+    if draggingWalk then
+        local percent = math.clamp((mouseX - walkTrack.AbsolutePosition.X) / walkTrack.AbsoluteSize.X, 0, 1)
+        local index = math.round(percent * (#multipliers-1)) + 1
+        walkMultiplier = multipliers[index]
+        walkLabel.Text = "Walk Speed: " .. walkMultiplier .. "x"
+        
+        if player.Character and player.Character:FindFirstChild("Humanoid") then
+            player.Character.Humanoid.WalkSpeed = originalWalkSpeed * walkMultiplier
+        end
+        
+        walkKnob.Position = UDim2.new((index-1)/(#multipliers-1), -12, 0.5, -12)
+    end
+end)
+
+-- Fly Logic
+local character, root, humanoid
+
+local function startFly()
+    if flying then return end
+    flying = true
+    character = player.Character or player.CharacterAdded:Wait()
+    root = character:WaitForChild("HumanoidRootPart")
+    humanoid = character:WaitForChild("Humanoid")
+    
+    humanoid.PlatformStand = true
+    if noclipEnabled then updateNoclip() end
+
+    connection = RunService.Heartbeat:Connect(function()
+        if not (flying and root) then return end
+        local cam = workspace.CurrentCamera
+        local moveDir = Vector3.new()
+
+        if UserInputService:IsKeyDown(Enum.KeyCode.S) then moveDir -= cam.CFrame.LookVector end
+        if UserInputService:IsKeyDown(Enum.KeyCode.W) then moveDir += cam.CFrame.LookVector end
+        if UserInputService:IsKeyDown(Enum.KeyCode.A) then moveDir -= cam.CFrame.RightVector end
+        if UserInputService:IsKeyDown(Enum.KeyCode.D) then moveDir += cam.CFrame.RightVector end
+        if UserInputService:IsKeyDown(Enum.KeyCode.Space) then moveDir += Vector3.new(0,1,0) end
+        if UserInputService:IsKeyDown(Enum.KeyCode.LeftControl) then moveDir -= Vector3.new(0,1,0) end
+
+        if moveDir.Magnitude > 0.1 then
+            root.AssemblyLinearVelocity = moveDir.Unit * flySpeed
+        else
+            root.AssemblyLinearVelocity = Vector3.new(0, hoverPower, 0)
+        end
+
+        local look = cam.CFrame.LookVector
+        root.CFrame = CFrame.lookAt(root.Position, root.Position + Vector3.new(look.X, 0, look.Z))
+    end)
+
+    statusLabel.Text = "Status: FLYING"
+    statusLabel.TextColor3 = Color3.fromRGB(100, 255, 140)
+end
+
+local function stopFly()
+    if not flying then return end
+    flying = false
+    if connection then connection:Disconnect() end
+    if humanoid then humanoid.PlatformStand = false end
+    if root then root.AssemblyLinearVelocity = Vector3.new(0,0,0) end
+    statusLabel.Text = "Status: OFF"
+    statusLabel.TextColor3 = Color3.fromRGB(255, 90, 90)
+end
+
+UserInputService.InputBegan:Connect(function(input, gp)
+    if gp then return end
+    if input.KeyCode == Enum.KeyCode.F then
+        if flying then stopFly() else startFly() end
+    end
+end)
+
+print("✅ Script Loaded - Visuals tab with ESP added")
