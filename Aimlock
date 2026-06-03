@@ -1,0 +1,600 @@
+-- LocalScript inside StarterPlayerScripts or StarterGui
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local LocalPlayer = Players.LocalPlayer
+local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
+local Camera = workspace.CurrentCamera
+
+-- ScreenGui Setup with forced Top Layer Rendering Priority
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = "TestAimGui"
+ScreenGui.ResetOnSpawn = false
+ScreenGui.DisplayOrder = 100
+ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+ScreenGui.Parent = PlayerGui
+
+----------------------------------------------------------------
+-- CONFIGURATION / STATE VARIABLES
+----------------------------------------------------------------
+local Settings = {
+	FOV = 150,          -- Radius of the circle in pixels
+	Smoothness = 20,    -- Speed Percentage (1% = Very Slow, 100% = Instant Snap)
+	TargetLock = false, -- Master switch toggle
+	Triggerbot = false, -- Triggerbot toggle
+	ShotDelay = 0.05,   -- Default delay (Updated dynamically by slider)
+	RageMode = false,   -- Rage Mode toggle
+	TargetTeams = true  -- Manual control switch to allow/disallow hitting teammates
+}
+
+local IsRmbHeld = false
+local EspCache = {} 
+local ValidTargets = {} 
+
+----------------------------------------------------------------
+-- DRAW FOV CIRCLE VISUALIZER
+----------------------------------------------------------------
+local FOVCircle = Drawing.new("Circle")
+FOVCircle.Visible = true
+FOVCircle.Thickness = 1.5
+FOVCircle.Color = Color3.fromRGB(255, 255, 255)
+FOVCircle.Filled = false
+FOVCircle.Transparency = 0.6
+FOVCircle.NumSides = 32
+
+RunService.RenderStepped:Connect(function()
+	if Settings.RageMode then
+		FOVCircle.Position = Camera.ViewportSize / 2
+		FOVCircle.Radius = 2000
+	else
+		FOVCircle.Position = UserInputService:GetMouseLocation()
+		FOVCircle.Radius = Settings.FOV
+	end
+end)
+
+----------------------------------------------------------------
+-- UI ELEMENTS CREATION
+----------------------------------------------------------------
+
+local ToggleButton = Instance.new("TextButton")
+ToggleButton.Name = "MenuToggle"
+ToggleButton.Size = UDim2.new(0, 120, 0, 40)
+ToggleButton.Position = UDim2.new(0, 20, 0, 20)
+ToggleButton.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
+ToggleButton.Text = "Toggle Menu"
+ToggleButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+ToggleButton.Font = Enum.Font.SourceSansBold
+ToggleButton.TextSize = 16
+ToggleButton.ZIndex = 10
+ToggleButton.Parent = ScreenGui
+
+local UICornerToggle = Instance.new("UICorner")
+UICornerToggle.CornerRadius = UDim.new(0, 8)
+UICornerToggle.Parent = ToggleButton
+
+local MainFrame = Instance.new("Frame")
+MainFrame.Name = "MainMenu"
+MainFrame.Size = UDim2.new(0, 250, 0, 500) -- Expanded to perfectly hold the new slider
+MainFrame.Position = UDim2.new(0, 20, 0, 70)
+MainFrame.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
+MainFrame.Visible = true
+MainFrame.ZIndex = 10
+MainFrame.Parent = ScreenGui
+
+local UICornerMain = Instance.new("UICorner")
+UICornerMain.CornerRadius = UDim.new(0, 10)
+UICornerMain.Parent = MainFrame
+
+local Title = Instance.new("TextLabel")
+Title.Size = UDim2.new(1, 0, 0, 40)
+Title.BackgroundTransparency = 1
+Title.Text = "Test Environment Settings"
+Title.TextColor3 = Color3.fromRGB(255, 255, 255)
+Title.Font = Enum.Font.SourceSansBold
+Title.TextSize = 18
+Title.Parent = MainFrame
+
+local UIListLayout = Instance.new("UIListLayout")
+UIListLayout.Parent = MainFrame
+UIListLayout.SortOrder = Enum.SortOrder.LayoutOrder
+UIListLayout.Padding = UDim.new(0, 12)
+UIListLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+
+local Spacer = Instance.new("Frame")
+Spacer.Size = UDim2.new(1, 0, 0, 25)
+Spacer.BackgroundTransparency = 1
+Spacer.LayoutOrder = 0
+Spacer.Parent = MainFrame
+
+local FOVLabel = Instance.new("TextLabel")
+FOVLabel.Size = UDim2.new(0, 200, 0, 20)
+FOVLabel.BackgroundTransparency = 1
+FOVLabel.Text = "FOV Radius: " .. Settings.FOV .. "px"
+FOVLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
+FOVLabel.Font = Enum.Font.SourceSans
+FOVLabel.TextSize = 14
+FOVLabel.LayoutOrder = 1
+FOVLabel.Parent = MainFrame
+
+local FOVInput = Instance.new("TextBox")
+FOVInput.Size = UDim2.new(0, 200, 0, 30)
+FOVInput.BackgroundColor3 = Color3.fromRGB(45, 45, 45)
+FOVInput.Text = tostring(Settings.FOV)
+FOVInput.TextColor3 = Color3.fromRGB(255, 255, 255)
+FOVInput.Font = Enum.Font.Code
+FOVInput.TextSize = 14
+FOVInput.LayoutOrder = 2
+FOVInput.PlaceholderText = "Enter FOV (10-500)"
+FOVInput.Parent = MainFrame
+
+local SmoothLabel = Instance.new("TextLabel")
+SmoothLabel.Size = UDim2.new(0, 200, 0, 20)
+SmoothLabel.BackgroundTransparency = 1
+SmoothLabel.Text = "Lock Speed: " .. Settings.Smoothness .. "%"
+SmoothLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
+SmoothLabel.Font = Enum.Font.SourceSans
+SmoothLabel.TextSize = 14
+SmoothLabel.LayoutOrder = 3
+SmoothLabel.Parent = MainFrame
+
+local SmoothInput = Instance.new("TextBox")
+SmoothInput.Size = UDim2.new(0, 200, 0, 30)
+SmoothInput.BackgroundColor3 = Color3.fromRGB(45, 45, 45)
+SmoothInput.Text = Settings.Smoothness .. "%"
+SmoothInput.TextColor3 = Color3.fromRGB(255, 255, 255)
+SmoothInput.Font = Enum.Font.Code
+SmoothInput.TextSize = 14
+SmoothInput.LayoutOrder = 4
+SmoothInput.PlaceholderText = "Enter Speed (1-100)"
+SmoothInput.Parent = MainFrame
+
+-- TRIGGERBOT DELAY SLIDER ASSEMBLY
+local DelayLabel = Instance.new("TextLabel")
+DelayLabel.Size = UDim2.new(0, 200, 0, 20)
+DelayLabel.BackgroundTransparency = 1
+DelayLabel.Text = "Trigger Delay: " .. string.format("%.2f", Settings.ShotDelay) .. "s"
+DelayLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
+DelayLabel.Font = Enum.Font.SourceSans
+DelayLabel.TextSize = 14
+DelayLabel.LayoutOrder = 5
+DelayLabel.Parent = MainFrame
+
+local SliderTrack = Instance.new("Frame")
+SliderTrack.Size = UDim2.new(0, 200, 0, 8)
+SliderTrack.BackgroundColor3 = Color3.fromRGB(45, 45, 45)
+SliderTrack.LayoutOrder = 6
+SliderTrack.Parent = MainFrame
+
+local UICornerTrack = Instance.new("UICorner")
+UICornerTrack.CornerRadius = UDim.new(1, 0)
+UICornerTrack.Parent = SliderTrack
+
+local SliderHandle = Instance.new("TextButton")
+SliderHandle.Size = UDim2.new(0, 16, 0, 16)
+SliderHandle.Position = UDim2.new(Settings.ShotDelay, -8, 0.5, -8) -- Initial position aligned with starting config
+SliderHandle.BackgroundColor3 = Color3.fromRGB(50, 180, 50)
+SliderHandle.Text = ""
+SliderHandle.Parent = SliderTrack
+
+local UICornerHandle = Instance.new("UICorner")
+UICornerHandle.CornerRadius = UDim.new(1, 0)
+UICornerHandle.Parent = SliderHandle
+
+local LockButton = Instance.new("TextButton")
+LockButton.Size = UDim2.new(0, 200, 0, 35)
+LockButton.BackgroundColor3 = Color3.fromRGB(180, 50, 50)
+LockButton.Text = "Master Switch: OFF [K]"
+LockButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+LockButton.Font = Enum.Font.SourceSansBold
+LockButton.TextSize = 14
+LockButton.LayoutOrder = 7
+LockButton.Parent = MainFrame
+
+local UICornerLock = Instance.new("UICorner")
+UICornerLock.CornerRadius = UDim.new(0, 6)
+UICornerLock.Parent = LockButton
+
+local TriggerButton = Instance.new("TextButton")
+TriggerButton.Size = UDim2.new(0, 200, 0, 35)
+TriggerButton.BackgroundColor3 = Color3.fromRGB(180, 50, 50)
+TriggerButton.Text = "Triggerbot: OFF [J]"
+TriggerButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+TriggerButton.Font = Enum.Font.SourceSansBold
+TriggerButton.TextSize = 14
+TriggerButton.LayoutOrder = 8
+TriggerButton.Parent = MainFrame
+
+local UICornerTrigger = Instance.new("UICorner")
+UICornerTrigger.CornerRadius = UDim.new(0, 6)
+UICornerTrigger.Parent = TriggerButton
+
+local TeamButton = Instance.new("TextButton")
+TeamButton.Size = UDim2.new(0, 200, 0, 35)
+TeamButton.BackgroundColor3 = Color3.fromRGB(50, 180, 50)
+TeamButton.Text = "Target Teammates: ON"
+TeamButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+TeamButton.Font = Enum.Font.SourceSansBold
+TeamButton.TextSize = 14
+TeamButton.LayoutOrder = 9
+TeamButton.Parent = MainFrame
+
+local UICornerTeam = Instance.new("UICorner")
+UICornerTeam.CornerRadius = UDim.new(0, 6)
+UICornerTeam.Parent = TeamButton
+
+local RageButton = Instance.new("TextButton")
+RageButton.Size = UDim2.new(0, 200, 0, 35)
+RageButton.BackgroundColor3 = Color3.fromRGB(120, 20, 20)
+RageButton.Text = "RAGE MODE: DISABLED"
+RageButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+RageButton.Font = Enum.Font.SourceSansBold
+RageButton.TextSize = 14
+RageButton.LayoutOrder = 10
+RageButton.Parent = MainFrame
+
+local UICornerRage = Instance.new("UICorner")
+UICornerRage.CornerRadius = UDim.new(0, 6)
+UICornerRage.Parent = RageButton
+
+----------------------------------------------------------------
+-- HELPER FUNCTIONS FOR TOGGLES
+----------------------------------------------------------------
+
+local function UpdateUIVisuals()
+	if Settings.TargetLock then
+		LockButton.BackgroundColor3 = Color3.fromRGB(50, 180, 50)
+		LockButton.Text = "Master Switch: ON [K]"
+	else
+		LockButton.BackgroundColor3 = Color3.fromRGB(180, 50, 50)
+		LockButton.Text = "Master Switch: OFF [K]"
+	end
+end
+
+local function UpdateTriggerVisuals()
+	if Settings.Triggerbot then
+		TriggerButton.BackgroundColor3 = Color3.fromRGB(50, 180, 50)
+		TriggerButton.Text = "Triggerbot: ON [J]"
+	else
+		TriggerButton.BackgroundColor3 = Color3.fromRGB(180, 50, 50)
+		TriggerButton.Text = "Triggerbot: OFF [J]"
+	end
+end
+
+local function UpdateTeamVisuals()
+	if Settings.TargetTeams then
+		TeamButton.BackgroundColor3 = Color3.fromRGB(50, 180, 50)
+		TeamButton.Text = "Target Teammates: ON"
+	else
+		TeamButton.BackgroundColor3 = Color3.fromRGB(180, 50, 50)
+		TeamButton.Text = "Target Teammates: OFF"
+	end
+end
+
+local function UpdateRageVisuals()
+	if Settings.RageMode then
+		RageButton.BackgroundColor3 = Color3.fromRGB(235, 10, 10)
+		RageButton.Text = "RAGE MODE: ACTIVE"
+	else
+		RageButton.BackgroundColor3 = Color3.fromRGB(120, 20, 20)
+		RageButton.Text = "RAGE MODE: DISABLED"
+	end
+end
+
+local function ToggleMasterSwitch()
+	Settings.TargetLock = not Settings.TargetLock
+	UpdateUIVisuals()
+end
+
+local function ToggleTriggerbot()
+	Settings.Triggerbot = not Settings.Triggerbot
+	UpdateTriggerVisuals()
+end
+
+local function ToggleTeamFiltering()
+	Settings.TargetTeams = not Settings.TargetTeams
+	UpdateTeamVisuals()
+end
+
+local function ToggleRageMode()
+	Settings.RageMode = not Settings.RageMode
+	UpdateRageVisuals()
+end
+
+----------------------------------------------------------------
+-- SLIDER LOGIC DRAG IMPLEMENTATION
+----------------------------------------------------------------
+local IsDraggingSlider = false
+
+SliderHandle.MouseButton1Down:Connect(function()
+	IsDraggingSlider = true
+end)
+
+UserInputService.InputEnded:Connect(function(input)
+	if input.UserInputType == Enum.UserInputType.MouseButton1 then
+		IsDraggingSlider = false
+	end
+end)
+
+UserInputService.InputChanged:Connect(function(input)
+	if IsDraggingSlider and input.UserInputType == Enum.UserInputType.MouseMovement then
+		local trackLength = SliderTrack.AbsoluteSize.X
+		local trackOrigin = SliderTrack.AbsolutePosition.X
+		local mouseX = input.Position.X
+		
+		-- Clamp percentage translation between 0 and 1
+		local percentage = math.clamp((mouseX - trackOrigin) / trackLength, 0, 1)
+		
+		-- Set position and update game configuration value (Min: 0, Max: 1 second)
+		SliderHandle.Position = UDim2.new(percentage, -8, 0.5, -8)
+		Settings.ShotDelay = percentage
+		DelayLabel.Text = "Trigger Delay: " .. string.format("%.2f", Settings.ShotDelay) .. "s"
+	end
+end)
+
+----------------------------------------------------------------
+-- UI INTERACTION FUNCTIONALITY
+----------------------------------------------------------------
+
+ToggleButton.MouseButton1Click:Connect(function()
+	MainFrame.Visible = not MainFrame.Visible
+	FOVCircle.Visible = MainFrame.Visible
+end)
+
+FOVInput.FocusLost:Connect(function()
+	local num = tonumber(FOVInput.Text)
+	if num then
+		Settings.FOV = math.clamp(num, 10, 500)
+		FOVLabel.Text = "FOV Radius: " .. Settings.FOV .. "px"
+	end
+	FOVInput.Text = tostring(Settings.FOV)
+end)
+
+SmoothInput.FocusLost:Connect(function()
+	local cleanText = string.gsub(SmoothInput.Text, "%%", "")
+	local num = tonumber(cleanText)
+	if num then
+		Settings.Smoothness = math.clamp(num, 1, 100)
+		SmoothLabel.Text = "Lock Speed: " .. Settings.Smoothness .. "%"
+	end
+	SmoothInput.Text = Settings.Smoothness .. "%"
+end)
+
+LockButton.MouseButton1Click:Connect(function()
+	ToggleMasterSwitch()
+end)
+
+TriggerButton.MouseButton1Click:Connect(function()
+	ToggleTriggerbot()
+end)
+
+TeamButton.MouseButton1Click:Connect(function()
+	ToggleTeamFiltering()
+end)
+
+RageButton.MouseButton1Click:Connect(function()
+	ToggleRageMode()
+end)
+
+----------------------------------------------------------------
+-- INPUT DETECTION
+----------------------------------------------------------------
+
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+	if gameProcessed then return end
+	
+	if input.UserInputType == Enum.UserInputType.MouseButton2 then
+		IsRmbHeld = true
+	elseif input.KeyCode == Enum.KeyCode.K then
+		ToggleMasterSwitch()
+	elseif input.KeyCode == Enum.KeyCode.J then
+		ToggleTriggerbot()
+	end
+end)
+
+UserInputService.InputEnded:Connect(function(input)
+	if input.UserInputType == Enum.UserInputType.MouseButton2 then
+		IsRmbHeld = false
+	end
+end)
+
+----------------------------------------------------------------
+-- TARGET ENGINE STREAM LOOP WITH MANUAL TEAM BYPASS
+----------------------------------------------------------------
+
+local function IsVisible(startPos, endPos, characterToIgnore)
+	local raycastParams = RaycastParams.new()
+	raycastParams.FilterType = Enum.RaycastFilterType.Exclude
+	raycastParams.FilterDescendantsInstances = {LocalPlayer.Character, characterToIgnore}
+	raycastParams.IgnoreWater = true
+
+	local direction = endPos - startPos
+	local result = workspace:Raycast(startPos, direction, raycastParams)
+	return result == nil
+end
+
+task.spawn(function()
+	while task.wait(0.2) do
+		local targets = {}
+		local myCharacter = LocalPlayer.Character
+		local checkedModels = {}
+
+		for _, player in ipairs(Players:GetPlayers()) do
+			if player ~= LocalPlayer and player.Character then
+				local char = player.Character
+				checkedModels[char] = true
+				
+				local humanoid = char:FindFirstChildOfClass("Humanoid")
+				local head = char:FindFirstChild("Head")
+				local root = char:FindFirstChild("HumanoidRootPart")
+				
+				if humanoid and head and root and humanoid.Health > 0 then
+					local shouldTarget = true
+					if not Settings.TargetTeams and not Settings.RageMode then
+						if player.Team == LocalPlayer.Team or player.TeamColor == LocalPlayer.TeamColor then
+							shouldTarget = false
+						end
+					end
+					
+					if shouldTarget then
+						table.insert(targets, {Character = char, Head = head, Root = root, Humanoid = humanoid})
+					end
+				end
+			end
+		end
+
+		for _, obj in ipairs(workspace:GetChildren()) do
+			if obj:IsA("Model") and obj ~= myCharacter and not checkedModels[obj] then
+				local humanoid = obj:FindFirstChildOfClass("Humanoid")
+				local head = obj:FindFirstChild("Head")
+				local root = obj:FindFirstChild("HumanoidRootPart")
+				
+				if humanoid and head and root and humanoid.Health > 0 then
+					table.insert(targets, {Character = obj, Head = head, Root = root, Humanoid = humanoid})
+				end
+			end
+		end
+		ValidTargets = targets
+	end
+end)
+
+local function GetClosestTargetWorldDistance()
+	local myCharacter = LocalPlayer.Character
+	if not myCharacter then return nil end
+	local myRoot = myCharacter:FindFirstChild("HumanoidRootPart")
+	if not myRoot then return nil end
+
+	local bestTarget = nil
+	local shortestWorldDistance = math.huge
+	local originPosition = Settings.RageMode and (Camera.ViewportSize / 2) or UserInputService:GetMouseLocation()
+
+	for _, target in ipairs(ValidTargets) do
+		if target.Humanoid.Health > 0 then
+			local screenPos, onScreen = Camera:WorldToViewportPoint(target.Head.Position)
+			
+			if onScreen or Settings.RageMode then
+				local allowedFov = Settings.RageMode and math.huge or Settings.FOV
+				local fovDistance = onScreen and (Vector2.new(screenPos.X, screenPos.Y) - originPosition).Magnitude or 0
+				
+				if fovDistance < allowedFov then
+					if IsVisible(Camera.CFrame.Position, target.Head.Position, target.Character) then
+						local worldDistance = (target.Root.Position - myRoot.Position).Magnitude
+						if worldDistance < shortestWorldDistance then
+							shortestWorldDistance = worldDistance
+							bestTarget = target.Head
+						end
+					end
+				end
+			end
+		end
+	end
+	return bestTarget
+end
+
+----------------------------------------------------------------
+-- ESP BOX RENDERING SYSTEM
+----------------------------------------------------------------
+
+local function CreateEspBox()
+	local box = Drawing.new("Square")
+	box.Visible = false
+	box.Color = Color3.fromRGB(255, 0, 0)
+	box.Thickness = 1
+	box.Filled = false
+	box.Transparency = 0.8
+	return box
+end
+
+local function UpdateEspBoxes()
+	local activeCharacters = {}
+
+	for _, target in ipairs(ValidTargets) do
+		if target.Humanoid.Health > 0 then
+			local char = target.Character
+			activeCharacters[char] = true
+
+			if not EspCache[char] then
+				EspCache[char] = CreateEspBox()
+			end
+
+			local box = EspCache[char]
+			local rootPos, rootOnScreen = Camera:WorldToViewportPoint(target.Root.Position)
+
+			if rootOnScreen then
+				local topPos = Camera:WorldToViewportPoint(target.Root.Position + Vector3.new(0, 3.5, 0))
+				local bottomPos = Camera:WorldToViewportPoint(target.Root.Position - Vector3.new(0, 3.5, 0))
+				
+				local boxHeight = math.abs(topPos.Y - bottomPos.Y)
+				local boxWidth = boxHeight * 0.65
+
+				box.Size = Vector2.new(boxWidth, boxHeight)
+				box.Position = Vector2.new(rootPos.X - (boxWidth / 2), rootPos.Y - (boxHeight / 2))
+				box.Visible = true
+			else
+				box.Visible = false
+			end
+		end
+	end
+
+	for char, box in pairs(EspCache) do
+		if not activeCharacters[char] then
+			box.Visible = false
+			box:Remove()
+			EspCache[char] = nil
+		end
+	end
+end
+
+----------------------------------------------------------------
+-- INDEPENDENT TRIGGERBOT ACTION THREAD
+----------------------------------------------------------------
+task.spawn(function()
+	local VirtualUser = game:GetService("VirtualUser")
+	
+	while true do
+		if Settings.TargetLock and (Settings.Triggerbot or Settings.RageMode) then
+			if IsRmbHeld or Settings.RageMode then
+				local targetHead = GetClosestTargetWorldDistance()
+				
+				if targetHead then
+					-- Dynamic injection logic using updated slider settings values
+					local currentDelay = Settings.RageMode and 0.01 or Settings.ShotDelay
+					if currentDelay > 0 then
+						task.wait(currentDelay)
+					end
+
+					VirtualUser:Button1Down(Vector2.new(0, 0), Camera.CFrame)
+					if typeof(mouse1click) == "function" then mouse1click() end
+					
+					task.wait(0.01)
+					
+					VirtualUser:Button1Up(Vector2.new(0, 0), Camera.CFrame)
+				end
+			end
+		end
+		task.wait(0.01) 
+	end
+end)
+
+----------------------------------------------------------------
+-- RUNTIME LOOP ENGINE (AIMLOCK & VISUALS ONLY)
+----------------------------------------------------------------
+
+RunService.RenderStepped:Connect(function(deltaTime)
+	UpdateEspBoxes()
+
+	if Settings.TargetLock and (IsRmbHeld or Settings.RageMode) then
+		local targetHead = GetClosestTargetWorldDistance()
+		
+		if targetHead then
+			local targetCFrame = CFrame.new(Camera.CFrame.Position, targetHead.Position)
+			local speedAlpha
+			
+			if Settings.RageMode or Settings.Smoothness == 100 then
+				speedAlpha = 1 
+			else
+				speedAlpha = math.clamp((Settings.Smoothness * 0.25) * deltaTime, 0.001, 1)
+			end
+			Camera.CFrame = Camera.CFrame:Lerp(targetCFrame, speedAlpha)
+		end
+	end
+end)
