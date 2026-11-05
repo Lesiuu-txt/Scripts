@@ -1,10 +1,14 @@
--- FlyHub (poprawiona wersja): Fly, Noclip, Walk Speed, Infinite Jump, ESP
+-- LesiuuHub (poprawiona wersja): Fly, Noclip, Walk Speed, Infinite Jump, ESP, Settings
 local Players = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
 local RunService = game:GetService("RunService")
 
 local player = Players.LocalPlayer
 local playerGui = player:WaitForChild("PlayerGui")
+
+-- Globalny uchwyt do unloadu + sprzatanie po poprzednim uruchomieniu (re-execute)
+local G = getgenv and getgenv() or _G
+if G.LesiuuHubUnload then pcall(G.LesiuuHubUnload) end
 
 -- ====================== STAN ======================
 local flying = false
@@ -17,11 +21,13 @@ local walkMultiplier = 1
 local hoverPower = 0 -- FIX: wczesniej nieistniejaca zmienna
 
 local flyConnection, noclipConnection, espConnection
+local jumpConn, inputBeganConn, inputChangedConn, inputEndedConn
+local charAddedConn, playerRemovingConn
 local character, root, humanoid
 local espDrawings = {}
 
 -- ====================== GUI ======================
-print("FlyHub: script started")
+print("LesiuuHub: script started")
 
 -- Pick the safest GUI parent the executor offers, fall back to PlayerGui
 local function getGuiParent()
@@ -35,19 +41,19 @@ end
 local guiParent = getGuiParent()
 
 for _, p in ipairs({guiParent, playerGui}) do
-    local old = p:FindFirstChild("FlyHub")
+    local old = p:FindFirstChild("LesiuuHub")
     if old then old:Destroy() end
 end
 
 local screenGui = Instance.new("ScreenGui")
-screenGui.Name = "FlyHub"
+screenGui.Name = "LesiuuHub"
 screenGui.ResetOnSpawn = false
 screenGui.DisplayOrder = 999
 local okParent = pcall(function() screenGui.Parent = guiParent end)
 if not okParent or not screenGui.Parent then
     screenGui.Parent = playerGui
 end
-print("FlyHub: GUI parented to " .. screenGui.Parent:GetFullName())
+print("LesiuuHub: GUI parented to " .. screenGui.Parent:GetFullName())
 
 local function corner(obj, radius)
     local c = Instance.new("UICorner")
@@ -113,6 +119,7 @@ end
 local flyContainer = makeContainer(true)
 local movementContainer = makeContainer(false)
 local visualsContainer = makeContainer(false)
+local settingsContainer = makeContainer(false)
 
 local function makeLabel(parent, text, pos, size, color, font, textSize)
     local l = Instance.new("TextLabel")
@@ -202,25 +209,51 @@ local function getCharacter()
     return root ~= nil and humanoid ~= nil
 end
 
--- Noclip
+-- Noclip (z przywracaniem kolizji i pamiecia oryginalnych wartosci)
+local originalCanCollide = {} -- [part] = wartosc CanCollide przed wlaczeniem
+
 local function setNoclip(state)
     noclipEnabled = state
     if noclipConnection then noclipConnection:Disconnect() noclipConnection = nil end
+
     if state then
-        noclipConnection = RunService.Stepped:Connect(function()
-            local char = player.Character
-            if not char then return end
+        -- zapamietaj oryginalne wartosci czesci aktualnej postaci
+        originalCanCollide = {}
+        local char = player.Character
+        if char then
             for _, part in ipairs(char:GetDescendants()) do
                 if part:IsA("BasePart") then
+                    originalCanCollide[part] = part.CanCollide
+                end
+            end
+        end
+
+        noclipConnection = RunService.Stepped:Connect(function()
+            local c = player.Character
+            if not c then return end
+            for _, part in ipairs(c:GetDescendants()) do
+                if part:IsA("BasePart") then
+                    -- czesci dodane pozniej (narzedzia, akcesoria) tez trzeba zapisac
+                    if originalCanCollide[part] == nil then
+                        originalCanCollide[part] = part.CanCollide
+                    end
                     part.CanCollide = false
                 end
             end
         end)
+    else
+        -- FIX: przy wylaczeniu przyroc kolizje tym czesciom, ktore ja mialy
+        for part, wasCollidable in pairs(originalCanCollide) do
+            if part.Parent then
+                part.CanCollide = wasCollidable
+            end
+        end
+        originalCanCollide = {}
     end
 end
 
 -- Infinite Jump
-UserInputService.JumpRequest:Connect(function()
+jumpConn = UserInputService.JumpRequest:Connect(function()
     if infiniteJumpEnabled and not flying and getCharacter() then
         humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
     end
@@ -291,7 +324,7 @@ local menuCollapsed = false
 local collapsedBar = Instance.new("TextLabel")
 collapsedBar.Size = UDim2.new(1, 0, 1, 0)
 collapsedBar.BackgroundTransparency = 1
-collapsedBar.Text = "FlyHub  -  Left Alt to expand"
+collapsedBar.Text = "LesiuuHub  -  Left Alt to expand"
 collapsedBar.TextColor3 = Color3.fromRGB(200, 140, 255)
 collapsedBar.TextSize = 16
 collapsedBar.Font = Enum.Font.GothamBold
@@ -306,7 +339,7 @@ local function setMenuCollapsed(state)
     mainFrame.Size = state and COLLAPSED_SIZE or FULL_SIZE
 end
 
-UserInputService.InputBegan:Connect(function(input, gp)
+inputBeganConn = UserInputService.InputBegan:Connect(function(input, gp)
     if input.KeyCode == Enum.KeyCode.LeftAlt then
         setMenuCollapsed(not menuCollapsed)
         return
@@ -317,7 +350,7 @@ UserInputService.InputBegan:Connect(function(input, gp)
     end
 end)
 
-player.CharacterAdded:Connect(function(char)
+charAddedConn = player.CharacterAdded:Connect(function(char)
     stopFly()
     onCharacter(char)
 end)
@@ -353,7 +386,7 @@ end
 flyKnob.InputBegan:Connect(function(i) if isPress(i) then activeSlider = "fly" end end)
 walkKnob.InputBegan:Connect(function(i) if isPress(i) then activeSlider = "walk" end end)
 
-UserInputService.InputChanged:Connect(function(input)
+inputChangedConn = UserInputService.InputChanged:Connect(function(input)
     if not activeSlider then return end
     if input.UserInputType ~= Enum.UserInputType.MouseMovement
         and input.UserInputType ~= Enum.UserInputType.Touch then return end
@@ -365,7 +398,7 @@ UserInputService.InputChanged:Connect(function(input)
     end
 end)
 
-UserInputService.InputEnded:Connect(function(input)
+inputEndedConn = UserInputService.InputEnded:Connect(function(input)
     if isPress(input) then activeSlider = nil end
 end)
 
@@ -422,6 +455,15 @@ local function updateESP()
                     local height = math.abs(bottom.Y - top.Y)
                     local width = height / 2
 
+                    -- kolor boxa: zielony = team, czerwony = enemy, magenta = brak teamow (FFA)
+                    if player.Team ~= nil and plr.Team == player.Team then
+                        d.box.Color = Color3.fromRGB(0, 255, 120) -- team
+                    elseif player.Team ~= nil or plr.Team ~= nil then
+                        d.box.Color = Color3.fromRGB(255, 60, 60) -- enemy
+                    else
+                        d.box.Color = Color3.fromRGB(255, 0, 255) -- brak teamow
+                    end
+
                     d.box.Size = Vector2.new(width, height)
                     d.box.Position = Vector2.new(top.X - width / 2, top.Y)
                     d.name.Text = plr.Name .. " [" .. math.floor(hum.Health) .. "/" .. math.floor(hum.MaxHealth) .. "]"
@@ -435,7 +477,7 @@ local function updateESP()
     end
 end
 
-Players.PlayerRemoving:Connect(removeESP) -- FIX: sprzatanie po wyjsciu gracza
+playerRemovingConn = Players.PlayerRemoving:Connect(removeESP) -- FIX: sprzatanie po wyjsciu gracza
 
 makeCheckbox(visualsContainer, "Player ESP", 0.1, function(state)
     espEnabled = state
@@ -447,12 +489,95 @@ makeCheckbox(visualsContainer, "Player ESP", 0.1, function(state)
     end
 end)
 
+-- ====================== SETTINGS ======================
+makeLabel(settingsContainer, "LesiuuHub v1.1", UDim2.new(0, 15, 0.05, 0),
+    UDim2.new(1, -30, 0, 25), Color3.fromRGB(200, 140, 255), Enum.Font.GothamBold, 20)
+
+makeLabel(settingsContainer, "F - Fly   |   Left Alt - Menu", UDim2.new(0, 15, 0.16, 0),
+    UDim2.new(1, -30, 0, 25), Color3.fromRGB(180, 130, 230), Enum.Font.GothamSemibold, 15)
+
+makeLabel(settingsContainer, "Unload wylacza wszystkie funkcje i usuwa GUI:", UDim2.new(0, 15, 0.55, 0),
+    UDim2.new(1, -30, 0, 25), Color3.fromRGB(150, 150, 150), Enum.Font.Gotham, 14)
+
+makeLabel(settingsContainer, "fly, noclip, walkspeed, ESP, listenery", UDim2.new(0, 15, 0.62, 0),
+    UDim2.new(1, -30, 0, 25), Color3.fromRGB(150, 150, 150), Enum.Font.Gotham, 14)
+
+local function unload()
+    -- 1) wylacz aktywne funkcje i przyroc ustawienia postaci
+    pcall(stopFly)
+    if noclipEnabled then setNoclip(false) end
+    for plr in pairs(espDrawings) do removeESP(plr) end
+    espEnabled = false
+    if getCharacter() and walkMultiplier ~= 1 then
+        humanoid.WalkSpeed = originalWalkSpeed
+    end
+
+    -- 2) odlacz wszystkie nasluchiwania
+    local conns = {
+        flyConnection, noclipConnection, espConnection,
+        jumpConn, inputBeganConn, inputChangedConn, inputEndedConn,
+        charAddedConn, playerRemovingConn,
+    }
+    for _, c in ipairs(conns) do
+        if c then c:Disconnect() end
+    end
+    flyConnection, noclipConnection, espConnection = nil, nil, nil
+    jumpConn, inputBeganConn, inputChangedConn, inputEndedConn = nil, nil, nil, nil
+    charAddedConn, playerRemovingConn = nil, nil
+
+    -- 3) zniszcz GUI
+    if screenGui then
+        screenGui:Destroy()
+        screenGui = nil
+    end
+
+    -- 4) wyczysc globalny uchwyt (mozliwy ponowny start od zera)
+    if G then G.LesiuuHubUnload = nil end
+    print("✅ LesiuuHub unloaded")
+end
+
+local unloadBtn = Instance.new("TextButton")
+unloadBtn.Size = UDim2.new(0.8, 0, 0, 46)
+unloadBtn.Position = UDim2.new(0.1, 0, 0.3, 0)
+unloadBtn.BackgroundColor3 = Color3.fromRGB(170, 45, 55)
+unloadBtn.Text = "UNLOAD SCRIPT"
+unloadBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+unloadBtn.Font = Enum.Font.GothamBold
+unloadBtn.TextSize = 18
+unloadBtn.Parent = settingsContainer
+corner(unloadBtn, 8)
+
+unloadBtn.MouseEnter:Connect(function()
+    unloadBtn.BackgroundColor3 = Color3.fromRGB(215, 65, 75)
+end)
+unloadBtn.MouseLeave:Connect(function()
+    unloadBtn.BackgroundColor3 = Color3.fromRGB(170, 45, 55)
+end)
+
+-- Potwierdzenie w 2 klikniecia (auto-reset po 3s)
+local confirmArmed = false
+unloadBtn.MouseButton1Click:Connect(function()
+    if not confirmArmed then
+        confirmArmed = true
+        unloadBtn.Text = "Click again to confirm"
+        task.delay(3, function()
+            if confirmArmed and unloadBtn.Parent then
+                confirmArmed = false
+                unloadBtn.Text = "UNLOAD SCRIPT"
+            end
+        end)
+    else
+        unload()
+    end
+end)
+
 -- ====================== ZAKLADKI ======================
 local tabButtons = {}
 local tabs = {
     {name = "Fly", frame = flyContainer},
     {name = "Movement", frame = movementContainer},
     {name = "Visuals", frame = visualsContainer},
+    {name = "Settings", frame = settingsContainer},
 }
 
 local function selectTab(selected)
@@ -480,4 +605,7 @@ for i, tab in ipairs(tabs) do
 end
 
 selectTab(tabs[1])
-print("✅ FlyHub loaded")
+
+-- Rejestracja unloadu (re-execute posprzata po sobie sam)
+G.LesiuuHubUnload = unload
+print("✅ LesiuuHub loaded")
