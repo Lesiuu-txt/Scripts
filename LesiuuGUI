@@ -21,13 +21,33 @@ local character, root, humanoid
 local espDrawings = {}
 
 -- ====================== GUI ======================
-local oldGui = playerGui:FindFirstChild("FlyHub")
-if oldGui then oldGui:Destroy() end
+print("FlyHub: script started")
+
+-- Pick the safest GUI parent the executor offers, fall back to PlayerGui
+local function getGuiParent()
+    local ok, result = pcall(function()
+        if gethui then return gethui() end
+        return game:GetService("CoreGui")
+    end)
+    if ok and result then return result end
+    return playerGui
+end
+local guiParent = getGuiParent()
+
+for _, p in ipairs({guiParent, playerGui}) do
+    local old = p:FindFirstChild("FlyHub")
+    if old then old:Destroy() end
+end
 
 local screenGui = Instance.new("ScreenGui")
 screenGui.Name = "FlyHub"
 screenGui.ResetOnSpawn = false
-screenGui.Parent = playerGui
+screenGui.DisplayOrder = 999
+local okParent = pcall(function() screenGui.Parent = guiParent end)
+if not okParent or not screenGui.Parent then
+    screenGui.Parent = playerGui
+end
+print("FlyHub: GUI parented to " .. screenGui.Parent:GetFullName())
 
 local function corner(obj, radius)
     local c = Instance.new("UICorner")
@@ -263,7 +283,34 @@ local function startFly()
     statusLabel.TextColor3 = Color3.fromRGB(100, 255, 140)
 end
 
+-- Menu collapse (Left Alt)
+local FULL_SIZE = UDim2.new(0, 440, 0, 400)
+local COLLAPSED_SIZE = UDim2.new(0, 440, 0, 34)
+local menuCollapsed = false
+
+local collapsedBar = Instance.new("TextLabel")
+collapsedBar.Size = UDim2.new(1, 0, 1, 0)
+collapsedBar.BackgroundTransparency = 1
+collapsedBar.Text = "FlyHub  -  Left Alt to expand"
+collapsedBar.TextColor3 = Color3.fromRGB(200, 140, 255)
+collapsedBar.TextSize = 16
+collapsedBar.Font = Enum.Font.GothamBold
+collapsedBar.Visible = false
+collapsedBar.Parent = mainFrame
+
+local function setMenuCollapsed(state)
+    menuCollapsed = state
+    leftFrame.Visible = not state
+    rightFrame.Visible = not state
+    collapsedBar.Visible = state
+    mainFrame.Size = state and COLLAPSED_SIZE or FULL_SIZE
+end
+
 UserInputService.InputBegan:Connect(function(input, gp)
+    if input.KeyCode == Enum.KeyCode.LeftAlt then
+        setMenuCollapsed(not menuCollapsed)
+        return
+    end
     if gp then return end
     if input.KeyCode == Enum.KeyCode.F then
         if flying then stopFly() else startFly() end
